@@ -8,7 +8,8 @@ declare -r sbt_release_version="0.13.7"
 declare -r sbt_unreleased_version="0.13.8-M1"
 declare -r buildProps="project/build.properties"
 
-declare sbt_jar sbt_dir sbt_create sbt_version
+declare sbt_jar sbt_dir sbt_create sbt_version sbt_main
+declare jline_ver jline_jar
 declare scala_version sbt_explicit_version
 declare verbose noshare batch trace_level log_level
 declare sbt_saved_stty debugUs
@@ -209,6 +210,12 @@ acquire_sbt_jar () {
   [[ -r "$sbt_jar" ]] || download_url "$sbt_url" "$sbt_jar"
 }
 
+acquire_jline_jar() {
+  jline_ver="2.12"
+  jline_jar="$HOME/.m2/repository/jline/jline/${jline_ver}/jline-${jline_ver}.jar"
+  [[ -r "$jline_jar" ]] || { which mvn >/dev/null && mvn -q org.apache.maven.plugins:maven-dependency-plugin:2.8:get -Dartifact=jline:jline:${jline_ver} && [[ -r "$jline_jar" ]]; }
+}
+
 usage () {
   cat <<EOM
 Usage: $script_name [options]
@@ -312,6 +319,10 @@ addDebugger () {
 setScalaVersion () {
   [[ "$1" == *"-SNAPSHOT" ]] && addResolver 'Resolver.sonatypeRepo("snapshots")'
   addSbt "++ $1"
+}
+
+setMainClass() {
+  sbt_main=$(unzip -p "$sbt_jar" META-INF/MANIFEST.MF | grep -o 'Main-Class: [^[:space:]]*' | cut -f 2 -d ' ')
 }
 
 process_args ()
@@ -446,6 +457,12 @@ EOM
   echo "Download failed. Obtain the jar manually and place it at $sbt_jar"
   exit 1
 }
+[[ -r "$jline_jar" ]] || acquire_jline_jar || {
+  # still no jar? uh-oh.
+  echo "Download failed. Obtain the JLine jar manually and place it at $jline_jar"
+  exit 1
+}
+setMainClass
 
 if [[ -n "$noshare" ]]; then
   for opt in ${noshare_opts}; do
@@ -484,7 +501,7 @@ main () {
   execRunner "$java_cmd" \
     "${extra_jvm_opts[@]}" \
     "${java_args[@]}" \
-    -jar "$sbt_jar" \
+    -cp "$jline_jar:$sbt_jar" "$sbt_main" \
     "${sbt_commands[@]}" \
     "${residual_args[@]}"
 }
